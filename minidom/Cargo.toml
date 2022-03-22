@@ -22,3 +22,5 @@ gitlab = { repository = "xmpp-rs/xmpp-rs" }
 
 [dependencies]
 quick-xml = "0.22.0"
+nom = "7"
+bytes = "1"
