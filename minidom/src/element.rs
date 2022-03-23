@@ -83,7 +83,7 @@ pub struct Element {
     namespace: String,
     /// This is only used when deserializing. If you have to use a custom prefix use
     /// `ElementBuilder::prefix`.
-    prefix: Option<Prefix>,
+    pub(crate) prefix: Option<Prefix>,
     prefixes: Prefixes,
     attributes: BTreeMap<String, String>,
     children: Vec<Node>,
@@ -119,13 +119,6 @@ impl PartialEq for Element {
     }
 }
 
-fn ensure_no_prefix<S: AsRef<str>>(s: &S) -> Result<()> {
-    match s.as_ref().split(':').count() {
-        1 => Ok(()),
-        _ => Err(Error::InvalidElement),
-    }
-}
-
 impl Element {
     pub(crate) fn new<P: Into<Prefixes>>(
         name: String,
@@ -135,8 +128,6 @@ impl Element {
         attributes: BTreeMap<String, String>,
         children: Vec<Node>,
     ) -> Element {
-        ensure_no_prefix(&name).unwrap();
-        // TODO: Return Result<Element> instead.
         Element {
             name,
             namespace,
@@ -323,7 +314,7 @@ impl Element {
             }
             tokenizer.push(&buf[0..len]);
             while let Some(token) = tokenizer.pull()? {
-                tree_builder.process_token(token);
+                tree_builder.process_token(token)?;
 
                 if let Some(root) = tree_builder.root.take() {
                     return Ok(root);

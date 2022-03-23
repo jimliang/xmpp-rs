@@ -1,3 +1,5 @@
+// Copyright (c) 2022 Astro <astro@spaceboyz.net>
+
 //! Streaming tokenizer (SAX parser)
 
 use bytes::BytesMut;
