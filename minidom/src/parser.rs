@@ -10,16 +10,16 @@
 
 use crate::element::Element;
 use crate::error::{Error, ParserError, Result};
+use crate::tokenizer::Tokenizer;
+use crate::tree_builder::TreeBuilder;
 
-use bytes::BytesMut;
-use quick_xml::Reader as EventReader;
-use std::cell::RefCell;
 use std::str;
 
 /// Parser
 #[derive(Debug)]
 pub struct Parser {
-    buffer: RefCell<BytesMut>,
+    tokenizer: Tokenizer,
+    tree_builder: TreeBuilder,
     state: ParserState,
 }
 
@@ -90,7 +90,8 @@ impl Parser {
     /// Creates a new Parser
     pub fn new() -> Parser {
         Parser {
-            buffer: RefCell::new(BytesMut::new()),
+            tokenizer: Tokenizer::new(),
+            tree_builder: TreeBuilder::new(),
             state: ParserState::Empty,
         }
     }

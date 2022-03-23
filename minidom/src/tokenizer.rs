@@ -4,7 +4,7 @@ use bytes::BytesMut;
 use super::Token;
 
 /// `Result::Err` type returned from `Tokenizer`
-pub type TokenizerError = nom::error::Error<()>;
+pub type TokenizerError = nom::error::Error<String>;
 
 /// Streaming tokenizer (SAX parser)
 pub struct Tokenizer {
@@ -33,9 +33,11 @@ impl Tokenizer {
     pub fn pull(&mut self) -> Result<Option<Token>, TokenizerError> {
         /// cannot return an error with location info that points to
         /// our buffer that we still want to mutate
-        fn erase_location<T>(e: nom::error::Error<T>) -> TokenizerError {
+        fn with_input_to_owned(e: nom::error::Error<&[u8]>) -> TokenizerError {
             nom::error::Error {
-                input: (),
+                input: std::str::from_utf8(e.input)
+                    .unwrap_or("invalud UTF-8")
+                    .to_owned(),
                 code: e.code,
             }
         }
@@ -46,9 +48,9 @@ impl Tokenizer {
             Result::Err(nom::Err::Incomplete(_)) =>
                 None,
             Result::Err(nom::Err::Error(e)) =>
-                return Err(erase_location(e)),
+                return Err(with_input_to_owned(e)),
             Result::Err(nom::Err::Failure(e)) =>
-                return Err(erase_location(e)),
+                return Err(with_input_to_owned(e)),
         } };
         match result {
            Some((s_len, token)) => {
