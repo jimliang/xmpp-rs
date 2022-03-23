@@ -3,7 +3,7 @@
 use nom::{
     branch::alt,
     bytes::streaming::{tag, take_while1},
-    character::{is_space, streaming::{char, digit1, one_of, space0}},
+    character::{is_space, streaming::{char, digit1, one_of, space0, space1}},
     combinator::{not, peek, value},
     multi::many0,
     number::streaming::hex_u32,
@@ -48,6 +48,11 @@ pub struct Attribute {
 /// Parsed XML token
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token {
+    /// XML declaration `<?xml version="1.0"?>`
+    XmlDecl {
+        /// List of attributes
+        attrs: Vec<Attribute>,
+    },
     /// XML element opening tag
     StartTag {
         /// Element name
@@ -96,6 +101,24 @@ impl Token {
             } else {
                 Err(nom::Err::Incomplete(nom::Needed::Unknown))
             }
+        }, |s| {
+            // XmlDecl
+            let (s, _) = tag("?xml")(s)?;
+            let (s, _) = space1(s)?;
+
+            let (s, attrs) = many0(|s| {
+                let (s, (name, value)) = Self::parse_attr(s)?;
+                let (s, _) = space0(s)?;
+                Ok((s, (name, value)))
+            })(s)?;
+
+            let (s, _) = space0(s)?;
+            let (s, _) = tag("?>")(s)?;
+            Ok((s, Token::XmlDecl {
+                attrs: attrs.into_iter()
+                    .map(|(name, value)| Attribute { name: name.into(), value })
+                    .collect(),
+            }))
         }, |s| {
             // EndTag
             let (s, _) = tag("/")(s)?;
@@ -352,7 +375,28 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_xml_decl() {
+        assert_eq!(
+            Ok((&b""[..], Token::XmlDecl {
+                attrs: vec![Attribute {
+                    name: LocalName {
+                        name: "version".to_owned(),
+                        prefix: None,
+                    },
+                    value: "1.0".to_owned(),
+                }, Attribute {
+                    name: LocalName {
+                        name: "encoding".to_owned(),
+                        prefix: None,
+                    },
+                    value: "UTF-8".to_owned(),
+                }],
+            })),
+            Token::parse(b"<?xml version='1.0' encoding=\"UTF-8\"?>")
+        );
+    }
+
     // TODO:
     // - DOCTYPE
-    // - xmldecl
 }
