@@ -10,22 +10,57 @@ use nom::{
     IResult,
 };
 
+/// Attribute name with prefix
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct LocalName {
+    /// Element/attribute prefix
+    pub prefix: Option<String>,
+    /// Element/attribute name
+    pub name: String,
+}
+
+impl From<&str> for LocalName {
+    fn from(s: &str) -> Self {
+        match s.split_once(':') {
+            Some((prefix, name)) =>
+                LocalName {
+                    prefix: Some(prefix.to_owned()),
+                    name: name.to_owned(),
+                },
+            None =>
+                LocalName {
+                    prefix: None,
+                    name: s.to_owned(),
+                },
+        }
+    }
+}
+
+/// Name-value pair of an element's attribute
+#[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Attribute {
+    /// Attribute name
+    pub name: LocalName,
+    /// Attribute value
+    pub value: String,
+}
+
 /// Parsed XML token
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Token {
     /// XML element opening tag
     StartTag {
         /// Element name
-        name: String,
+        name: LocalName,
         /// List of attributes
-        attrs: Vec<(String, String)>,
+        attrs: Vec<Attribute>,
         /// Is this tag self-closing (`/>`)?
         self_closing: bool,
     },
     /// XML element closing tag
     EndTag {
         /// Element name
-        name: String,
+        name: LocalName,
     },
     /// Child text
     Text(String),
@@ -67,7 +102,7 @@ impl Token {
             let (s, _) = space0(s)?;
             let (s, _) = tag(">")(s)?;
             let name = Self::str_from_utf8(name)?;
-            Ok((s, Token::EndTag { name: name.to_string() }))
+            Ok((s, Token::EndTag { name: name.into() }))
         }, |s| {
             let (s, _) = space0(s)?;
             let (s, name) = take_while1(|b| !(is_space(b) || b == b'>' || b == b'/'))(s)?;
@@ -98,9 +133,9 @@ impl Token {
             }
             Ok((s_, Token::StartTag {
                 name: Self::str_from_utf8(name)?
-                    .to_owned(),
+                    .into(),
                 attrs: attrs.into_iter()
-                    .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                    .map(|(name, value)| Attribute { name: name.into(), value })
                     .collect(),
                 self_closing,
             }))
@@ -178,6 +213,13 @@ impl Token {
 mod tests {
     use super::*;
 
+    fn attr(name: &str, value: &str) -> Attribute {
+        Attribute {
+            name: name.into(),
+            value: value.to_owned(),
+        }
+    }
+
     #[test]
     fn test_text() {
         assert_eq!(
@@ -222,7 +264,7 @@ mod tests {
     fn test_tag() {
         assert_eq!(
             Ok((&b""[..], Token::StartTag {
-                name: "foobar".to_string(),
+                name: "foobar".into(),
                 attrs: vec![],
                 self_closing: false,
             })),
@@ -234,11 +276,11 @@ mod tests {
     fn test_attrs() {
         assert_eq!(
             Ok((&b""[..], Token::StartTag {
-                name: "a".to_string(),
+                name: "a".into(),
                 attrs: vec![
-                    ("a".to_owned(), "2'3".to_owned()),
-                    ("b".to_owned(), "4\"2".to_owned()),
-                    ("c".to_owned(), "".to_owned()),
+                    attr("a", "2'3"),
+                    attr("b", "4\"2"),
+                    attr("c", ""),
                 ],
                 self_closing: false,
             })),
@@ -250,9 +292,9 @@ mod tests {
     fn test_attrs_entities() {
         assert_eq!(
             Ok((&b""[..], Token::StartTag {
-                name: "a".to_string(),
+                name: "a".into(),
                 attrs: vec![
-                    ("a".to_owned(), "<3".to_owned()),
+                    attr("a", "<3"),
                 ],
                 self_closing: false,
             })),
@@ -264,7 +306,7 @@ mod tests {
     fn test_self_closing_tag() {
         assert_eq!(
             Ok((&b""[..], Token::StartTag {
-                name: "foobar".to_string(),
+                name: "foobar".into(),
                 attrs: vec![],
                 self_closing: true,
             })),
@@ -276,9 +318,42 @@ mod tests {
     fn test_end_tag() {
         assert_eq!(
             Ok((&b""[..], Token::EndTag {
-                name: "foobar".to_string(),
+                name: "foobar".into(),
             })),
             Token::parse(b"</foobar>")
+        );
+    }
+
+    #[test]
+    fn test_element_prefix() {
+        assert_eq!(
+            Ok((&b""[..], Token::StartTag {
+                name: LocalName {
+                    name: "z".to_owned(),
+                    prefix: Some("x".to_owned()),
+                },
+                attrs: vec![],
+                self_closing: true,
+            })),
+            Token::parse(b"<x:z/>")
+        );
+    }
+
+    #[test]
+    fn test_attr_prefix() {
+        assert_eq!(
+            Ok((&b""[..], Token::StartTag {
+                name: "a".into(),
+                attrs: vec![Attribute {
+                    name: LocalName {
+                        name: "abc".to_owned(),
+                        prefix: Some("xyz".to_owned()),
+                    },
+                    value: "".to_owned(),
+                }],
+                self_closing: false,
+            })),
+            Token::parse(b"<a xyz:abc=''>")
         );
     }
 

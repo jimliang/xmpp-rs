@@ -64,6 +64,7 @@ impl Tokenizer {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::token::Attribute;
 
     #[test]
     fn test() {
@@ -88,13 +89,16 @@ mod tests {
         for chunk_size in 1..=buf.len() {
             assert_eq!(vec![
                 Token::StartTag {
-                    name: "foo".to_owned(),
-                    attrs: vec![("bar".to_owned(), "baz".to_owned())],
+                    name: "foo".into(),
+                    attrs: vec![Attribute {
+                        name: "bar".into(),
+                        value: "baz".to_owned(),
+                    }],
                     self_closing: false,
                 },
                 Token::Text("quux".to_owned()),
                 Token::EndTag {
-                    name: "foo".to_owned(),
+                    name: "foo".into(),
                 },
             ], run(chunk_size, buf));
         }
