@@ -35,18 +35,12 @@ pub enum Error {
     /// An error which is returned when an element is closed when it shouldn't be
     InvalidElementClosed,
 
-    /// An error which is returned when an elemet's name contains more colons than permitted
-    InvalidElement,
-
     /// An error which is returned when an element being serialized doesn't contain a prefix
     /// (be it None or Some(_)).
     InvalidPrefix,
 
     /// An error which is returned when an element doesn't contain a namespace
     MissingNamespace,
-
-    /// An error which is returned when a comment is to be parsed by minidom
-    NoComments,
 
     /// An error which is returned when a prefixed is defined twice
     DuplicatePrefix,
@@ -61,10 +55,8 @@ impl StdError for Error {
             Error::IoError(e) => Some(e),
             Error::EndOfDocument => None,
             Error::InvalidElementClosed => None,
-            Error::InvalidElement => None,
             Error::InvalidPrefix => None,
             Error::MissingNamespace => None,
-            Error::NoComments => None,
             Error::DuplicatePrefix => None,
         }
     }
@@ -83,13 +75,8 @@ impl std::fmt::Display for Error {
             Error::InvalidElementClosed => {
                 write!(fmt, "the XML is invalid, an element was wrongly closed")
             }
-            Error::InvalidElement => write!(fmt, "the XML element is invalid"),
             Error::InvalidPrefix => write!(fmt, "the prefix is invalid"),
             Error::MissingNamespace => write!(fmt, "the XML element is missing a namespace",),
-            Error::NoComments => write!(
-                fmt,
-                "a comment has been found even though comments are forbidden"
-            ),
             Error::DuplicatePrefix => write!(fmt, "the prefix is already defined"),
         }
     }

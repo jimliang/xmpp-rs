@@ -77,6 +77,7 @@ impl Token {
         alt((
             Self::parse_tag,
             |s| {
+                let (s, _) = not(peek(char('<')))(s)?;
                 let (s, text) = Self::parse_text('<', s)?;
                 Ok((s, Token::Text(text)))
             },

@@ -1,7 +1,9 @@
+// Copyright (c) 2022 Astro <astro@spaceboyz.net>
+
 //! SAX events to DOM tree conversion
 
 use std::collections::BTreeMap;
-use crate::Element;
+use crate::{Element, Error};
 use crate::prefixes::Prefixes;
 use crate::token::{Attribute, LocalName, Token};
 
@@ -47,7 +49,7 @@ impl TreeBuilder {
         None
     }
 
-    fn process_start_tag(&mut self, name: LocalName, attrs: Vec<Attribute>) {
+    fn process_start_tag(&mut self, name: LocalName, attrs: Vec<Attribute>) -> Result<(), Error> {
         let mut prefixes = Prefixes::default();
         let mut attributes = BTreeMap::new();
         for attr in attrs.into_iter() {
@@ -68,19 +70,28 @@ impl TreeBuilder {
         }
         self.prefixes_stack.push(prefixes.clone());
 
+        let namespace = self.lookup_prefix(&name.prefix)
+            .ok_or(Error::MissingNamespace)?
+            .to_owned();
         let el = Element::new(
             name.name,
-            self.lookup_prefix(&name.prefix).unwrap_or("").to_owned(),
+            namespace,
             Some(name.prefix),
             prefixes,
             attributes,
             vec![]
         );
         self.stack.push(el);
+
+        Ok(())
     }
 
-    fn process_end_tag(&mut self) {
+    fn process_end_tag(&mut self, name: LocalName) -> Result<(), Error> {
         if let Some(el) = self.pop() {
+            if el.name() != name.name || el.prefix != Some(name.prefix) {
+                return Err(Error::InvalidElementClosed);
+            }
+
             if self.depth() > 0 {
                 let top = self.stack.len() - 1;
                 self.stack[top].append_child(el);
@@ -88,6 +99,8 @@ impl TreeBuilder {
                 self.root = Some(el);
             }
         }
+
+        Ok(())
     }
 
     fn process_text(&mut self, text: String) {
@@ -98,7 +111,7 @@ impl TreeBuilder {
     }
 
     /// Process a Token that you got out of a Tokenizer
-    pub fn process_token(&mut self, token: Token) {
+    pub fn process_token(&mut self, token: Token) -> Result<(), Error> {
         match token {
             Token::XmlDecl { .. } => {},
 
@@ -106,22 +119,24 @@ impl TreeBuilder {
                 name,
                 attrs,
                 self_closing: false,
-            } => self.process_start_tag(name, attrs),
+            } => self.process_start_tag(name, attrs)?,
 
             Token::StartTag {
                 name,
                 attrs,
                 self_closing: true,
             } => {
-                self.process_start_tag(name, attrs);
-                self.process_end_tag();
+                self.process_start_tag(name.clone(), attrs)?;
+                self.process_end_tag(name)?;
             }
 
-            Token::EndTag { .. } =>
-                self.process_end_tag(),
+            Token::EndTag { name } =>
+                self.process_end_tag(name)?,
 
             Token::Text(text) =>
                 self.process_text(text),
         }
+
+        Ok(())
     }
 }
