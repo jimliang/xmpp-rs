@@ -81,6 +81,7 @@ impl Token {
     fn parse_tag(s: &[u8]) -> IResult<&[u8], Token> {
         let (s, _) = tag("<")(s)?;
         alt((|s| -> IResult<&[u8], Token> {
+            // CDATA
             let (s, _) = tag("![CDATA[")(s)?;
             let mut end = None;
             for i in 0..s.len() - 2 {
@@ -96,6 +97,7 @@ impl Token {
                 Err(nom::Err::Incomplete(nom::Needed::Unknown))
             }
         }, |s| {
+            // EndTag
             let (s, _) = tag("/")(s)?;
             let (s, _) = space0(s)?;
             let (s, name) = take_while1(|b| !(is_space(b) || b == b'>'))(s)?;
@@ -104,34 +106,27 @@ impl Token {
             let name = Self::str_from_utf8(name)?;
             Ok((s, Token::EndTag { name: name.into() }))
         }, |s| {
+            // StartTag
             let (s, _) = space0(s)?;
             let (s, name) = take_while1(|b| !(is_space(b) || b == b'>' || b == b'/'))(s)?;
-            let mut attrs = vec![];
-            let mut self_closing = false;
-            let mut s_ = s;
-            loop {
-                let (s, _) = space0(s_)?;
-                let (s, attr) = alt((|s| {
-                    let (s, _) = tag("/")(s)?;
-                    let (s, _) = space0(s)?;
-                    let (s, _) = tag(">")(s)?;
-                    self_closing = true;
-                    Ok((s, None))
-                }, |s| {
-                    let (s, _) = tag(">")(s)?;
-                    Ok((s, None))
-                }, |s| {
-                    let (s, (name, value)) = Self::parse_attr(s)?;
-                    Ok((s, Some((name, value))))
-                }))(s)?;
-                s_ = s;
-                if let Some(attr) = attr {
-                    attrs.push(attr);
-                } else {
-                    break;
-                }
-            }
-            Ok((s_, Token::StartTag {
+            let (s, _) = space0(s)?;
+            let (s, attrs) = many0(|s| {
+                let (s, (name, value)) = Self::parse_attr(s)?;
+                let (s, _) = space0(s)?;
+                Ok((s, (name, value)))
+            })(s)?;
+
+            let (s, self_closing) = alt((|s| {
+                let (s, _) = tag("/")(s)?;
+                let (s, _) = space0(s)?;
+                let (s, _) = tag(">")(s)?;
+                Ok((s, true))
+            }, |s| {
+                let (s, _) = tag(">")(s)?;
+                Ok((s, false))
+            }))(s)?;
+
+            Ok((s, Token::StartTag {
                 name: Self::str_from_utf8(name)?
                     .into(),
                 attrs: attrs.into_iter()
@@ -143,7 +138,7 @@ impl Token {
     }
 
     fn parse_attr(s: &[u8]) -> IResult<&[u8], (&str, String)> {
-        let (s, name) = take_while1(|b| !(is_space(b) || b == b'='))(s)?;
+        let (s, name) = take_while1(|b| !(is_space(b) || b == b'=' || b == b'/' || b == b'>'))(s)?;
         let name = Self::str_from_utf8(name)?;
         let (s, _) = space0(s)?;
         let (s, _) = tag("=")(s)?;
