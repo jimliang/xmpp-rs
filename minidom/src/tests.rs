@@ -10,10 +10,10 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+use std::io::Cursor;
+
 use crate::element::Element;
 use crate::error::Error;
-
-use quick_xml::Reader;
 
 const TEST_STRING: &'static str = r#"<root xmlns="root_ns" a="b" xml:lang="en">meow<child c="d"/><child xmlns="child_ns" d="e" xml:lang="fr"/>nya</root>"#;
 
@@ -36,7 +36,7 @@ fn build_test_tree() -> Element {
 
 #[test]
 fn reader_works() {
-    let mut reader = Reader::from_str(TEST_STRING);
+    let mut reader = Cursor::new(TEST_STRING);
     assert_eq!(
         Element::from_reader(&mut reader).unwrap(),
         build_test_tree()
@@ -348,7 +348,7 @@ fn two_elements_with_same_arguments_different_order_are_equal() {
 
 #[test]
 fn namespace_attributes_works() {
-    let mut reader = Reader::from_str(TEST_STRING);
+    let mut reader = Cursor::new(TEST_STRING);
     let root = Element::from_reader(&mut reader).unwrap();
     assert_eq!("en", root.attr("xml:lang").unwrap());
     assert_eq!(

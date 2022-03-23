@@ -85,6 +85,7 @@ pub mod node;
 mod prefixes;
 pub mod token;
 pub mod tokenizer;
+pub mod tree_builder;
 
 #[cfg(test)]
 mod tests;
