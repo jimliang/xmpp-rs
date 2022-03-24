@@ -23,9 +23,6 @@ pub enum Error {
     /// Error from the Tokenizer
     TokenizerError(crate::tokenizer::TokenizerError),
 
-    /// An UTF-8 conversion error.
-    Utf8Error(::std::str::Utf8Error),
-
     /// An I/O error, from std::io.
     IoError(::std::io::Error),
 
@@ -51,7 +48,6 @@ impl StdError for Error {
         match self {
             Error::XmlError(e) => Some(e),
             Error::TokenizerError(e) => Some(e),
-            Error::Utf8Error(e) => Some(e),
             Error::IoError(e) => Some(e),
             Error::EndOfDocument => None,
             Error::InvalidElementClosed => None,
@@ -67,7 +63,6 @@ impl std::fmt::Display for Error {
         match self {
             Error::XmlError(e) => write!(fmt, "XML error: {}", e),
             Error::TokenizerError(e) => write!(fmt, "XML tokenizer error: {}", e),
-            Error::Utf8Error(e) => write!(fmt, "UTF-8 error: {}", e),
             Error::IoError(e) => write!(fmt, "IO error: {}", e),
             Error::EndOfDocument => {
                 write!(fmt, "the end of the document has been reached prematurely")
@@ -91,12 +86,6 @@ impl From<::quick_xml::Error> for Error {
 impl From<crate::tokenizer::TokenizerError> for Error {
     fn from(err: crate::tokenizer::TokenizerError) -> Error {
         Error::TokenizerError(err)
-    }
-}
-
-impl From<::std::str::Utf8Error> for Error {
-    fn from(err: ::std::str::Utf8Error) -> Error {
-        Error::Utf8Error(err)
     }
 }
 

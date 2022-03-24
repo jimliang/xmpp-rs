@@ -32,10 +32,25 @@ impl TreeBuilder {
         self.stack.len()
     }
 
+    /// Get the top-most element from the stack but don't remove it
+    pub fn top(&mut self) -> Option<&Element> {
+        self.stack.last()
+    }
+
     /// Pop the top-most element from the stack
-    pub fn pop(&mut self) -> Option<Element> {
+    fn pop(&mut self) -> Option<Element> {
         self.prefixes_stack.pop();
         self.stack.pop()
+    }
+
+    /// Unshift the first child of the top element
+    pub fn unshift_child(&mut self) -> Option<Element> {
+        let depth = self.stack.len();
+        if depth > 0 {
+            self.stack[depth - 1].unshift_child()
+        } else {
+            None
+        }
     }
 
     /// Lookup XML namespace declaration for given prefix (or no prefix)

@@ -3,7 +3,7 @@
 //! Streaming tokenizer (SAX parser)
 
 use bytes::BytesMut;
-use super::Token;
+use super::{Error, Token};
 
 /// `Result::Err` type returned from `Tokenizer`
 pub type TokenizerError = nom::error::Error<String>;
@@ -32,7 +32,7 @@ impl Tokenizer {
     }
 
     /// Parse the next document fragment
-    pub fn pull(&mut self) -> Result<Option<Token>, TokenizerError> {
+    pub fn pull(&mut self) -> Result<Option<Token>, Error> {
         /// cannot return an error with location info that points to
         /// our buffer that we still want to mutate
         fn with_input_to_owned(e: nom::error::Error<&[u8]>) -> TokenizerError {
@@ -50,9 +50,9 @@ impl Tokenizer {
             Result::Err(nom::Err::Incomplete(_)) =>
                 None,
             Result::Err(nom::Err::Error(e)) =>
-                return Err(with_input_to_owned(e)),
+                return Err(with_input_to_owned(e).into()),
             Result::Err(nom::Err::Failure(e)) =>
-                return Err(with_input_to_owned(e)),
+                return Err(with_input_to_owned(e).into()),
         } };
         match result {
            Some((s_len, token)) => {
