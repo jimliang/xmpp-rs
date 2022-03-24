@@ -84,7 +84,8 @@ pub struct Element {
     /// This is only used when deserializing. If you have to use a custom prefix use
     /// `ElementBuilder::prefix`.
     pub(crate) prefix: Option<Prefix>,
-    prefixes: Prefixes,
+    /// Namespace declarations
+    pub prefixes: Prefixes,
     attributes: BTreeMap<String, String>,
     children: Vec<Node>,
 }
@@ -716,6 +717,18 @@ impl Element {
             }
         })?;
         self.children.remove(idx).into_element()
+    }
+
+    /// Remove the leading nodes up to the first child element and
+    /// return it
+    pub fn unshift_child(&mut self) -> Option<Element> {
+        while self.children.len() > 0 {
+            if let Some(el) = self.children.remove(0).into_element() {
+                return Some(el);
+            }
+        }
+
+        None
     }
 }
 
