@@ -80,7 +80,7 @@ impl Token {
             |s| {
                 let (s, _) = not(peek(char('<')))(s)?;
                 let (s, text) = Self::parse_text('<', s)?;
-                Ok((s, Token::Text(text)))
+                Ok((s, Token::Text(text.into_owned())))
             },
         ))(s)
     }
@@ -118,7 +118,10 @@ impl Token {
             let (s, _) = tag("?>")(s)?;
             Ok((s, Token::XmlDecl {
                 attrs: attrs.into_iter()
-                    .map(|(name, value)| Attribute { name: name.into(), value })
+                    .map(|(name, value)| Attribute {
+                        name: name.into(),
+                        value: value.into_owned(),
+                    })
                     .collect(),
             }))
         }, |s| {
@@ -155,14 +158,17 @@ impl Token {
                 name: Self::str_from_utf8(name)?
                     .into(),
                 attrs: attrs.into_iter()
-                    .map(|(name, value)| Attribute { name: name.into(), value })
+                    .map(|(name, value)| Attribute {
+                        name: name.into(),
+                        value: value.into_owned(),
+                    })
                     .collect(),
                 self_closing,
             }))
         }))(s)
     }
 
-    fn parse_attr(s: &[u8]) -> IResult<&[u8], (&str, String)> {
+    fn parse_attr(s: &[u8]) -> IResult<&[u8], (&str, Cow<str>)> {
         let (s, name) = take_while1(|b| !(is_space(b) || b == b'=' || b == b'/' || b == b'>'))(s)?;
         let name = Self::str_from_utf8(name)?;
         let (s, _) = space0(s)?;
@@ -174,7 +180,7 @@ impl Token {
         Ok((s, (name, value)))
     }
 
-    fn parse_text(until: char, s: &[u8]) -> IResult<&[u8], String> {
+    fn parse_text(until: char, s: &[u8]) -> IResult<&[u8], Cow<str>> {
         let (s, results) = many0(
             alt(
                 (|s| {
@@ -185,18 +191,18 @@ impl Token {
                         .parse()
                         .map_err(|_| nom::Err::Failure(nom::error::Error::new(s, nom::error::ErrorKind::Fail)))?;
                     if let Some(c) = std::char::from_u32(num) {
-                        Ok((s, format!("{}", c)))
+                        Ok((s, Cow::from(format!("{}", c))))
                     } else {
-                        Ok((s, format!("")))
+                        Ok((s, Cow::from(format!(""))))
                     }
                 }, |s| {
                     let (s, _) = tag("&#x")(s)?;
                     let (s, num) = hex_u32(s)?;
                     let (s, _) = char(';')(s)?;
                     if let Some(c) = std::char::from_u32(num) {
-                        Ok((s, format!("{}", c)))
+                        Ok((s, Cow::from(format!("{}", c))))
                     } else {
-                        Ok((s, format!("")))
+                        Ok((s, Cow::from(format!(""))))
                     }
                 }, |s| {
                     let (s, _) = char('&')(s)?;
@@ -208,19 +214,23 @@ impl Token {
                         value('\'', tag("apos")),
                     ))(s)?;
                     let (s, _) = char(';')(s)?;
-                    Ok((s, format!("{}", c)))
+                    Ok((s, Cow::from(format!("{}", c))))
                 }, |s| {
                     let (s, _) = not(peek(char(until)))(s)?;
                     let (s, text) = take_while1(|b| b != until as u8 && b != b'&')(s)?;
                     let text = Self::str_from_utf8(text)?;
                     let text = Self::normalize_newlines(text);
-                    Ok((s, text.into_owned()))
+                    Ok((s, text))
                 })
             )
         )(s)?;
 
-        let result = results.join("");
-        Ok((s, result))
+        if results.len() == 1 {
+            Ok((s, results.into_iter().next().unwrap()))
+        } else {
+            let result = results.join("");
+            Ok((s, Cow::from(result)))
+        }
     }
 
     fn str_from_utf8(s: &[u8]) -> Result<&str, nom::Err<nom::error::Error<&[u8]>>> {
