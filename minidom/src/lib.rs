@@ -83,8 +83,6 @@ pub mod error;
 mod namespaces;
 pub mod node;
 mod prefixes;
-pub mod token;
-pub mod tokenizer;
 pub mod tree_builder;
 
 #[cfg(test)]
@@ -95,5 +93,3 @@ pub use element::{Children, ChildrenMut, Element, ElementBuilder};
 pub use error::{Error, Result};
 pub use namespaces::NSChoice;
 pub use node::Node;
-pub use token::Token;
-pub use tokenizer::{Tokenizer, TokenizerError, tokenize};

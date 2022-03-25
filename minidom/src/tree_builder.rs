@@ -2,10 +2,10 @@
 
 //! SAX events to DOM tree conversion
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
+use rxml::{CData, Event, QName};
 use crate::{Element, Error};
 use crate::prefixes::Prefixes;
-use crate::token::{Attribute, LocalName, Token};
 
 /// Tree-building parser state
 pub struct TreeBuilder {
@@ -64,34 +64,39 @@ impl TreeBuilder {
         None
     }
 
-    fn process_start_tag(&mut self, name: LocalName, attrs: Vec<Attribute>) -> Result<(), Error> {
+    fn process_start_tag(&mut self, (prefix, name): QName, attrs: HashMap<QName, CData>) -> Result<(), Error> {
+        dbg!(&attrs);
         let mut prefixes = Prefixes::default();
         let mut attributes = BTreeMap::new();
-        for attr in attrs.into_iter() {
-            match (attr.name.prefix, attr.name.name) {
+        for ((prefix, name), value) in attrs.into_iter() {
+            match (prefix, name) {
                 (None, xmlns) if xmlns == "xmlns" => {
-                    prefixes.insert(None, attr.value);
+                    prefixes.insert(None, value);
                 }
-                (Some(xmlns), prefix) if xmlns == "xmlns" => {
-                    prefixes.insert(Some(prefix), attr.value);
+                (Some(xmlns), prefix) if *xmlns == "xmlns" => {
+                    prefixes.insert(Some(prefix.as_string()), value);
                 }
                 (Some(prefix), name) => {
-                    attributes.insert(format!("{}:{}", prefix, name), attr.value);
+                    attributes.insert(format!("{}:{}", prefix, name), value.as_string());
                 }
                 (None, name) => {
-                    attributes.insert(name, attr.value);
+                    attributes.insert(name.as_string(), value.as_string());
                 }
             }
         }
+        dbg!(&prefixes);
         self.prefixes_stack.push(prefixes.clone());
+        dbg!(&attributes);
 
-        let namespace = self.lookup_prefix(&name.prefix)
+        let namespace = self.lookup_prefix(
+            &prefix.clone().map(|prefix| prefix.as_str().to_owned())
+        )
             .ok_or(Error::MissingNamespace)?
             .to_owned();
         let el = Element::new(
-            name.name,
+            name.as_string(),
             namespace,
-            Some(name.prefix),
+            Some(prefix.map(|prefix| prefix.as_str().to_owned())),
             prefixes,
             attributes,
             vec![]
@@ -101,12 +106,8 @@ impl TreeBuilder {
         Ok(())
     }
 
-    fn process_end_tag(&mut self, name: LocalName) -> Result<(), Error> {
+    fn process_end_tag(&mut self) -> Result<(), Error> {
         if let Some(el) = self.pop() {
-            if el.name() != name.name || el.prefix != Some(name.prefix) {
-                return Err(Error::InvalidElementClosed);
-            }
-
             if self.depth() > 0 {
                 let top = self.stack.len() - 1;
                 self.stack[top].append_child(el);
@@ -125,31 +126,20 @@ impl TreeBuilder {
         }
     }
 
-    /// Process a Token that you got out of a Tokenizer
-    pub fn process_token(&mut self, token: Token) -> Result<(), Error> {
-        match token {
-            Token::XmlDecl { .. } => {},
+    /// Process a Event that you got out of a Eventizer
+    pub fn process_event(&mut self, event: Event) -> Result<(), Error> {
+        dbg!(&event);
+        match event {
+            Event::XMLDeclaration(_, _) => {},
 
-            Token::StartTag {
-                name,
-                attrs,
-                self_closing: false,
-            } => self.process_start_tag(name, attrs)?,
+            Event::StartElement(_, name, attrs) =>
+                self.process_start_tag(name, attrs)?,
 
-            Token::StartTag {
-                name,
-                attrs,
-                self_closing: true,
-            } => {
-                self.process_start_tag(name.clone(), attrs)?;
-                self.process_end_tag(name)?;
-            }
+            Event::EndElement(_) =>
+                self.process_end_tag()?,
 
-            Token::EndTag { name } =>
-                self.process_end_tag(name)?,
-
-            Token::Text(text) =>
-                self.process_text(text),
+            Event::Text(_, text) =>
+                self.process_text(text.as_string()),
         }
 
         Ok(())

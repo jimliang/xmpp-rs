@@ -21,7 +21,7 @@ pub enum Error {
     XmlError(::quick_xml::Error),
 
     /// Error from the Tokenizer
-    TokenizerError(crate::tokenizer::TokenizerError),
+    ParserError(rxml::Error),
 
     /// An I/O error, from std::io.
     IoError(::std::io::Error),
@@ -47,7 +47,7 @@ impl StdError for Error {
     fn cause(&self) -> Option<&dyn StdError> {
         match self {
             Error::XmlError(e) => Some(e),
-            Error::TokenizerError(e) => Some(e),
+            Error::ParserError(e) => Some(e),
             Error::IoError(e) => Some(e),
             Error::EndOfDocument => None,
             Error::InvalidElementClosed => None,
@@ -62,7 +62,7 @@ impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Error::XmlError(e) => write!(fmt, "XML error: {}", e),
-            Error::TokenizerError(e) => write!(fmt, "XML tokenizer error: {}", e),
+            Error::ParserError(e) => write!(fmt, "XML parser error: {}", e),
             Error::IoError(e) => write!(fmt, "IO error: {}", e),
             Error::EndOfDocument => {
                 write!(fmt, "the end of the document has been reached prematurely")
@@ -83,9 +83,9 @@ impl From<::quick_xml::Error> for Error {
     }
 }
 
-impl From<crate::tokenizer::TokenizerError> for Error {
-    fn from(err: crate::tokenizer::TokenizerError) -> Error {
-        Error::TokenizerError(err)
+impl From<rxml::Error> for Error {
+    fn from(err: rxml::Error) -> Error {
+        Error::ParserError(err)
     }
 }
 

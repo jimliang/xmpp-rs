@@ -17,15 +17,15 @@ use crate::error::{Error, Result};
 use crate::namespaces::NSChoice;
 use crate::node::Node;
 use crate::prefixes::{Namespace, Prefix, Prefixes};
-use crate::tokenizer::Tokenizer;
 use crate::tree_builder::TreeBuilder;
 
 use std::collections::{btree_map, BTreeMap};
-use std::io::{Cursor, Read, Write};
+use std::io::{Cursor, BufRead, Write};
 
 use std::borrow::Cow;
 use std::str;
 
+use rxml::{EventRead, PullParser};
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use quick_xml::Writer as EventWriter;
 
@@ -302,24 +302,14 @@ impl Element {
     }
 
     /// Parse a document from a `Read`.
-    pub fn from_reader<R: Read>(mut reader: R) -> Result<Element> {
-        const CHUNK_SIZE: usize = 65536;
-
-        let mut buf = [0; CHUNK_SIZE];
-        let mut tokenizer = Tokenizer::new();
+    pub fn from_reader<R: BufRead>(reader: R) -> Result<Element> {
         let mut tree_builder = TreeBuilder::new();
-        loop {
-            let len = reader.read(&mut buf)?;
-            if len == 0 {
-                break;
-            }
-            tokenizer.push(&buf[0..len]);
-            while let Some(token) = tokenizer.pull()? {
-                tree_builder.process_token(token)?;
+        let mut parser = PullParser::new(reader);
+        while let Some(event) = parser.read()? {
+            tree_builder.process_event(event)?;
 
-                if let Some(root) = tree_builder.root.take() {
-                    return Ok(root);
-                }
+            if let Some(root) = tree_builder.root.take() {
+                return Ok(root);
             }
         }
         Err(Error::EndOfDocument)
