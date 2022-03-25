@@ -1,5 +1,6 @@
 //! Parsed XML token
 
+use std::borrow::Cow;
 use nom::{
     branch::alt,
     bytes::streaming::{tag, take_while1},
@@ -212,8 +213,8 @@ impl Token {
                     let (s, _) = not(peek(char(until)))(s)?;
                     let (s, text) = take_while1(|b| b != until as u8 && b != b'&')(s)?;
                     let text = Self::str_from_utf8(text)?;
-                    // TODO: CoW
-                    Ok((s, text.to_owned()))
+                    let text = Self::normalize_newlines(text);
+                    Ok((s, text.into_owned()))
                 })
             )
         )(s)?;
@@ -225,6 +226,18 @@ impl Token {
     fn str_from_utf8(s: &[u8]) -> Result<&str, nom::Err<nom::error::Error<&[u8]>>> {
         std::str::from_utf8(s)
             .map_err(|_| nom::Err::Failure(nom::error::Error::new(s, nom::error::ErrorKind::Fail)))
+    }
+
+    /// https://www.w3.org/TR/2008/REC-xml-20081126/#sec-line-ends
+    fn normalize_newlines(s: &str) -> Cow<str> {
+        let mut s = Cow::from(s);
+        if s.find("\r\n").is_some() {
+            s = Cow::from(s.replace("\r\n", "\n"));
+        }
+        if s.find("\r").is_some() {
+            s = Cow::from(s.replace("\r", "\n"));
+        }
+        s
     }
 }
 
@@ -244,6 +257,14 @@ mod tests {
         assert_eq!(
             Ok((&b"</x"[..], Token::Text("foobar".to_string()))),
             Token::parse(b"foobar</x")
+        );
+    }
+
+    #[test]
+    fn test_newlines() {
+        assert_eq!(
+            Ok((&b"</x"[..], Token::Text("a\nb\nc\nd".to_string()))),
+            Token::parse(b"a\nb\rc\r\nd</x")
         );
     }
 
