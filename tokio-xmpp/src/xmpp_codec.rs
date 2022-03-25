@@ -1,7 +1,9 @@
 //! XML stream parser for XMPP
 
+use crate::Error;
 use bytes::{BufMut, BytesMut};
 use log::debug;
+use minidom::{tokenize, tree_builder::TreeBuilder};
 use std;
 use std::collections::HashMap;
 use std::default::Default;
@@ -9,8 +11,6 @@ use std::fmt::Write;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 use xmpp_parsers::Element;
-use minidom::{tokenize, tree_builder::TreeBuilder};
-use crate::Error;
 
 /// Anything that can be sent or received on an XMPP/XML stream
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -60,20 +60,23 @@ impl Decoder for XMPPCodec {
             self.stanza_builder.process_token(token)?;
             let has_stream_root = self.stanza_builder.depth() > 0;
 
-            if ! had_stream_root && has_stream_root {
+            if !had_stream_root && has_stream_root {
                 let root = self.stanza_builder.top().unwrap();
-                let attrs = root.attrs()
-                    .map(|(name, value)| (name.to_owned(), value.to_owned()))
-                    .chain(
-                        root.prefixes.declared_prefixes()
-                            .iter()
-                            .map(|(prefix, namespace)| (
-                                prefix.as_ref().map(|prefix| format!("xmlns:{}", prefix))
-                                    .unwrap_or_else(|| "xmlns".to_owned()),
-                                namespace.clone()
-                            ))
-                    )
-                    .collect();
+                let attrs =
+                    root.attrs()
+                        .map(|(name, value)| (name.to_owned(), value.to_owned()))
+                        .chain(root.prefixes.declared_prefixes().iter().map(
+                            |(prefix, namespace)| {
+                                (
+                                    prefix
+                                        .as_ref()
+                                        .map(|prefix| format!("xmlns:{}", prefix))
+                                        .unwrap_or_else(|| "xmlns".to_owned()),
+                                    namespace.clone(),
+                                )
+                            },
+                        ))
+                        .collect();
                 return Ok(Some(Packet::StreamStart(attrs)));
             } else if self.stanza_builder.depth() == 1 {
                 if let Some(stanza) = self.stanza_builder.unshift_child() {

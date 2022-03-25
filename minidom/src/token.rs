@@ -1,15 +1,18 @@
 //! Parsed XML token
 
-use std::borrow::Cow;
 use nom::{
     branch::alt,
     bytes::streaming::{tag, take_while1},
-    character::{is_space, streaming::{char, digit1, one_of, space0, space1}},
+    character::{
+        is_space,
+        streaming::{char, digit1, one_of, space0, space1},
+    },
     combinator::{not, peek, value},
     multi::many0,
     number::streaming::hex_u32,
     IResult,
 };
+use std::borrow::Cow;
 
 /// Attribute name with prefix
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -23,16 +26,14 @@ pub struct LocalName {
 impl From<&str> for LocalName {
     fn from(s: &str) -> Self {
         match s.split_once(':') {
-            Some((prefix, name)) =>
-                LocalName {
-                    prefix: Some(prefix.to_owned()),
-                    name: name.to_owned(),
-                },
-            None =>
-                LocalName {
-                    prefix: None,
-                    name: s.to_owned(),
-                },
+            Some((prefix, name)) => LocalName {
+                prefix: Some(prefix.to_owned()),
+                name: name.to_owned(),
+            },
+            None => LocalName {
+                prefix: None,
+                name: s.to_owned(),
+            },
         }
     }
 }
@@ -75,97 +76,109 @@ pub enum Token {
 impl Token {
     /// Parse one token
     pub fn parse(s: &[u8]) -> IResult<&[u8], Token> {
-        alt((
-            Self::parse_tag,
-            |s| {
-                let (s, _) = not(peek(char('<')))(s)?;
-                let (s, text) = Self::parse_text('<', s)?;
-                Ok((s, Token::Text(text.into_owned())))
-            },
-        ))(s)
+        alt((Self::parse_tag, |s| {
+            let (s, _) = not(peek(char('<')))(s)?;
+            let (s, text) = Self::parse_text('<', s)?;
+            Ok((s, Token::Text(text.into_owned())))
+        }))(s)
     }
 
     fn parse_tag(s: &[u8]) -> IResult<&[u8], Token> {
         let (s, _) = tag("<")(s)?;
-        alt((|s| -> IResult<&[u8], Token> {
-            // CDATA
-            let (s, _) = tag("![CDATA[")(s)?;
-            let mut end = None;
-            for i in 0..s.len() - 2 {
-                if &s[i..i + 3] == b"]]>" {
-                    end = Some(i);
-                    break
+        alt((
+            |s| -> IResult<&[u8], Token> {
+                // CDATA
+                let (s, _) = tag("![CDATA[")(s)?;
+                let mut end = None;
+                for i in 0..s.len() - 2 {
+                    if &s[i..i + 3] == b"]]>" {
+                        end = Some(i);
+                        break;
+                    }
                 }
-            }
-            if let Some(end) = end {
-                let text = Self::str_from_utf8(&s[..end])?;
-                Ok((&s[end + 3..], Token::Text(text.to_string())))
-            } else {
-                Err(nom::Err::Incomplete(nom::Needed::Unknown))
-            }
-        }, |s| {
-            // XmlDecl
-            let (s, _) = tag("?xml")(s)?;
-            let (s, _) = space1(s)?;
+                if let Some(end) = end {
+                    let text = Self::str_from_utf8(&s[..end])?;
+                    Ok((&s[end + 3..], Token::Text(text.to_string())))
+                } else {
+                    Err(nom::Err::Incomplete(nom::Needed::Unknown))
+                }
+            },
+            |s| {
+                // XmlDecl
+                let (s, _) = tag("?xml")(s)?;
+                let (s, _) = space1(s)?;
 
-            let (s, attrs) = many0(|s| {
-                let (s, (name, value)) = Self::parse_attr(s)?;
+                let (s, attrs) = many0(|s| {
+                    let (s, (name, value)) = Self::parse_attr(s)?;
+                    let (s, _) = space0(s)?;
+                    Ok((s, (name, value)))
+                })(s)?;
+
                 let (s, _) = space0(s)?;
-                Ok((s, (name, value)))
-            })(s)?;
-
-            let (s, _) = space0(s)?;
-            let (s, _) = tag("?>")(s)?;
-            Ok((s, Token::XmlDecl {
-                attrs: attrs.into_iter()
-                    .map(|(name, value)| Attribute {
-                        name: name.into(),
-                        value: value.into_owned(),
-                    })
-                    .collect(),
-            }))
-        }, |s| {
-            // EndTag
-            let (s, _) = tag("/")(s)?;
-            let (s, _) = space0(s)?;
-            let (s, name) = take_while1(|b| !(is_space(b) || b == b'>'))(s)?;
-            let (s, _) = space0(s)?;
-            let (s, _) = tag(">")(s)?;
-            let name = Self::str_from_utf8(name)?;
-            Ok((s, Token::EndTag { name: name.into() }))
-        }, |s| {
-            // StartTag
-            let (s, _) = space0(s)?;
-            let (s, name) = take_while1(|b| !(is_space(b) || b == b'>' || b == b'/'))(s)?;
-            let (s, _) = space0(s)?;
-            let (s, attrs) = many0(|s| {
-                let (s, (name, value)) = Self::parse_attr(s)?;
-                let (s, _) = space0(s)?;
-                Ok((s, (name, value)))
-            })(s)?;
-
-            let (s, self_closing) = alt((|s| {
+                let (s, _) = tag("?>")(s)?;
+                Ok((
+                    s,
+                    Token::XmlDecl {
+                        attrs: attrs
+                            .into_iter()
+                            .map(|(name, value)| Attribute {
+                                name: name.into(),
+                                value: value.into_owned(),
+                            })
+                            .collect(),
+                    },
+                ))
+            },
+            |s| {
+                // EndTag
                 let (s, _) = tag("/")(s)?;
                 let (s, _) = space0(s)?;
+                let (s, name) = take_while1(|b| !(is_space(b) || b == b'>'))(s)?;
+                let (s, _) = space0(s)?;
                 let (s, _) = tag(">")(s)?;
-                Ok((s, true))
-            }, |s| {
-                let (s, _) = tag(">")(s)?;
-                Ok((s, false))
-            }))(s)?;
+                let name = Self::str_from_utf8(name)?;
+                Ok((s, Token::EndTag { name: name.into() }))
+            },
+            |s| {
+                // StartTag
+                let (s, _) = space0(s)?;
+                let (s, name) = take_while1(|b| !(is_space(b) || b == b'>' || b == b'/'))(s)?;
+                let (s, _) = space0(s)?;
+                let (s, attrs) = many0(|s| {
+                    let (s, (name, value)) = Self::parse_attr(s)?;
+                    let (s, _) = space0(s)?;
+                    Ok((s, (name, value)))
+                })(s)?;
 
-            Ok((s, Token::StartTag {
-                name: Self::str_from_utf8(name)?
-                    .into(),
-                attrs: attrs.into_iter()
-                    .map(|(name, value)| Attribute {
-                        name: name.into(),
-                        value: value.into_owned(),
-                    })
-                    .collect(),
-                self_closing,
-            }))
-        }))(s)
+                let (s, self_closing) = alt((
+                    |s| {
+                        let (s, _) = tag("/")(s)?;
+                        let (s, _) = space0(s)?;
+                        let (s, _) = tag(">")(s)?;
+                        Ok((s, true))
+                    },
+                    |s| {
+                        let (s, _) = tag(">")(s)?;
+                        Ok((s, false))
+                    },
+                ))(s)?;
+
+                Ok((
+                    s,
+                    Token::StartTag {
+                        name: Self::str_from_utf8(name)?.into(),
+                        attrs: attrs
+                            .into_iter()
+                            .map(|(name, value)| Attribute {
+                                name: name.into(),
+                                value: value.into_owned(),
+                            })
+                            .collect(),
+                        self_closing,
+                    },
+                ))
+            },
+        ))(s)
     }
 
     fn parse_attr(s: &[u8]) -> IResult<&[u8], (&str, Cow<str>)> {
@@ -182,54 +195,51 @@ impl Token {
     }
 
     fn parse_text(until: char, s: &[u8]) -> IResult<&[u8], Cow<str>> {
-        let (s, results) = many0(
-            alt(
-                (|s| {
-                    let (s, _) = tag("&#")(s)?;
-                    let (s, num) = digit1(s)?;
-                    let (s, _) = char(';')(s)?;
-                    let num: u32 = Self::str_from_utf8(num)?
-                        .parse()
-                        .map_err(|_| nom::Err::Failure(nom::error::Error::new(s, nom::error::ErrorKind::Fail)))?;
-                    if let Some(c) = std::char::from_u32(num) {
-                        Ok((s, Cow::from(format!("{}", c))))
-                    } else {
-                        Ok((s, Cow::from(format!(""))))
-                    }
-                }, |s| {
-                    let (s, _) = tag("&#x")(s)?;
-                    let (s, num) = hex_u32(s)?;
-                    let (s, _) = char(';')(s)?;
-                    if let Some(c) = std::char::from_u32(num) {
-                        Ok((s, Cow::from(format!("{}", c))))
-                    } else {
-                        Ok((s, Cow::from(format!(""))))
-                    }
-                }, |s| {
-                    let (s, _) = char('&')(s)?;
-                    let (s, c) = alt((
-                        value('&', tag("amp")),
-                        value('<', tag("lt")),
-                        value('>', tag("gt")),
-                        value('"', tag("quot")),
-                        value('\'', tag("apos")),
-                    ))(s)?;
-                    let (s, _) = char(';')(s)?;
+        let (s, results) = many0(alt((
+            |s| {
+                let (s, _) = tag("&#")(s)?;
+                let (s, num) = digit1(s)?;
+                let (s, _) = char(';')(s)?;
+                let num: u32 = Self::str_from_utf8(num)?.parse().map_err(|_| {
+                    nom::Err::Failure(nom::error::Error::new(s, nom::error::ErrorKind::Fail))
+                })?;
+                if let Some(c) = std::char::from_u32(num) {
                     Ok((s, Cow::from(format!("{}", c))))
-                }, |s| {
-                    let (s, _) = not(peek(char(until)))(s)?;
-                    let (s, text) = take_while1(|b|
-                         b != until as u8 &&
-                         b != b'&' &&
-                         b != b'<' &&
-                         b != b'>'
-                    )(s)?;
-                    let text = Self::str_from_utf8(text)?;
-                    let text = Self::normalize_newlines(text);
-                    Ok((s, text))
-                })
-            )
-        )(s)?;
+                } else {
+                    Ok((s, Cow::from(format!(""))))
+                }
+            },
+            |s| {
+                let (s, _) = tag("&#x")(s)?;
+                let (s, num) = hex_u32(s)?;
+                let (s, _) = char(';')(s)?;
+                if let Some(c) = std::char::from_u32(num) {
+                    Ok((s, Cow::from(format!("{}", c))))
+                } else {
+                    Ok((s, Cow::from(format!(""))))
+                }
+            },
+            |s| {
+                let (s, _) = char('&')(s)?;
+                let (s, c) = alt((
+                    value('&', tag("amp")),
+                    value('<', tag("lt")),
+                    value('>', tag("gt")),
+                    value('"', tag("quot")),
+                    value('\'', tag("apos")),
+                ))(s)?;
+                let (s, _) = char(';')(s)?;
+                Ok((s, Cow::from(format!("{}", c))))
+            },
+            |s| {
+                let (s, _) = not(peek(char(until)))(s)?;
+                let (s, text) =
+                    take_while1(|b| b != until as u8 && b != b'&' && b != b'<' && b != b'>')(s)?;
+                let text = Self::str_from_utf8(text)?;
+                let text = Self::normalize_newlines(text);
+                Ok((s, text))
+            },
+        )))(s)?;
 
         if results.len() == 1 {
             Ok((s, results.into_iter().next().unwrap()))
@@ -329,11 +339,14 @@ mod tests {
     #[test]
     fn test_tag() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "foobar".into(),
-                attrs: vec![],
-                self_closing: false,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "foobar".into(),
+                    attrs: vec![],
+                    self_closing: false,
+                }
+            )),
             Token::parse(b"<foobar>")
         );
     }
@@ -341,15 +354,14 @@ mod tests {
     #[test]
     fn test_attrs() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "a".into(),
-                attrs: vec![
-                    attr("a", "2'3"),
-                    attr("b", "4\"2"),
-                    attr("c", ""),
-                ],
-                self_closing: false,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "a".into(),
+                    attrs: vec![attr("a", "2'3"), attr("b", "4\"2"), attr("c", ""),],
+                    self_closing: false,
+                }
+            )),
             Token::parse(b"<a a=\"2'3\" b = '4\"2' c = ''>")
         );
     }
@@ -357,15 +369,14 @@ mod tests {
     #[test]
     fn test_attrs_normalized() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "a".into(),
-                attrs: vec![
-                    attr("a", "x y"),
-                    attr("b", " "),
-                    attr("c", "a  b"),
-                ],
-                self_closing: false,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "a".into(),
+                    attrs: vec![attr("a", "x y"), attr("b", " "), attr("c", "a  b"),],
+                    self_closing: false,
+                }
+            )),
             Token::parse(b"<a a=\"x\ty\" b = '\r\n' c = 'a\r\rb'>")
         );
     }
@@ -373,13 +384,14 @@ mod tests {
     #[test]
     fn test_attrs_entities() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "a".into(),
-                attrs: vec![
-                    attr("a", "<3"),
-                ],
-                self_closing: false,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "a".into(),
+                    attrs: vec![attr("a", "<3"),],
+                    self_closing: false,
+                }
+            )),
             Token::parse(b"<a a='&lt;&#51;'>")
         );
     }
@@ -387,11 +399,14 @@ mod tests {
     #[test]
     fn test_self_closing_tag() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "foobar".into(),
-                attrs: vec![],
-                self_closing: true,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "foobar".into(),
+                    attrs: vec![],
+                    self_closing: true,
+                }
+            )),
             Token::parse(b"<foobar/>")
         );
     }
@@ -399,9 +414,12 @@ mod tests {
     #[test]
     fn test_end_tag() {
         assert_eq!(
-            Ok((&b""[..], Token::EndTag {
-                name: "foobar".into(),
-            })),
+            Ok((
+                &b""[..],
+                Token::EndTag {
+                    name: "foobar".into(),
+                }
+            )),
             Token::parse(b"</foobar>")
         );
     }
@@ -409,14 +427,17 @@ mod tests {
     #[test]
     fn test_element_prefix() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: LocalName {
-                    name: "z".to_owned(),
-                    prefix: Some("x".to_owned()),
-                },
-                attrs: vec![],
-                self_closing: true,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: LocalName {
+                        name: "z".to_owned(),
+                        prefix: Some("x".to_owned()),
+                    },
+                    attrs: vec![],
+                    self_closing: true,
+                }
+            )),
             Token::parse(b"<x:z/>")
         );
     }
@@ -424,17 +445,20 @@ mod tests {
     #[test]
     fn test_attr_prefix() {
         assert_eq!(
-            Ok((&b""[..], Token::StartTag {
-                name: "a".into(),
-                attrs: vec![Attribute {
-                    name: LocalName {
-                        name: "abc".to_owned(),
-                        prefix: Some("xyz".to_owned()),
-                    },
-                    value: "".to_owned(),
-                }],
-                self_closing: false,
-            })),
+            Ok((
+                &b""[..],
+                Token::StartTag {
+                    name: "a".into(),
+                    attrs: vec![Attribute {
+                        name: LocalName {
+                            name: "abc".to_owned(),
+                            prefix: Some("xyz".to_owned()),
+                        },
+                        value: "".to_owned(),
+                    }],
+                    self_closing: false,
+                }
+            )),
             Token::parse(b"<a xyz:abc=''>")
         );
     }
@@ -442,21 +466,27 @@ mod tests {
     #[test]
     fn test_xml_decl() {
         assert_eq!(
-            Ok((&b""[..], Token::XmlDecl {
-                attrs: vec![Attribute {
-                    name: LocalName {
-                        name: "version".to_owned(),
-                        prefix: None,
-                    },
-                    value: "1.0".to_owned(),
-                }, Attribute {
-                    name: LocalName {
-                        name: "encoding".to_owned(),
-                        prefix: None,
-                    },
-                    value: "UTF-8".to_owned(),
-                }],
-            })),
+            Ok((
+                &b""[..],
+                Token::XmlDecl {
+                    attrs: vec![
+                        Attribute {
+                            name: LocalName {
+                                name: "version".to_owned(),
+                                prefix: None,
+                            },
+                            value: "1.0".to_owned(),
+                        },
+                        Attribute {
+                            name: LocalName {
+                                name: "encoding".to_owned(),
+                                prefix: None,
+                            },
+                            value: "UTF-8".to_owned(),
+                        }
+                    ],
+                }
+            )),
             Token::parse(b"<?xml version='1.0' encoding=\"UTF-8\"?>")
         );
     }

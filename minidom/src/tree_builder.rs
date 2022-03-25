@@ -2,10 +2,10 @@
 
 //! SAX events to DOM tree conversion
 
-use std::collections::BTreeMap;
-use crate::{Element, Error};
 use crate::prefixes::Prefixes;
 use crate::token::{Attribute, LocalName, Token};
+use crate::{Element, Error};
+use std::collections::BTreeMap;
 
 /// Tree-building parser state
 pub struct TreeBuilder {
@@ -85,7 +85,8 @@ impl TreeBuilder {
         }
         self.prefixes_stack.push(prefixes.clone());
 
-        let namespace = self.lookup_prefix(&name.prefix)
+        let namespace = self
+            .lookup_prefix(&name.prefix)
             .ok_or(Error::MissingNamespace)?
             .to_owned();
         let el = Element::new(
@@ -94,7 +95,7 @@ impl TreeBuilder {
             Some(name.prefix),
             prefixes,
             attributes,
-            vec![]
+            vec![],
         );
         self.stack.push(el);
 
@@ -128,7 +129,7 @@ impl TreeBuilder {
     /// Process a Token that you got out of a Tokenizer
     pub fn process_token(&mut self, token: Token) -> Result<(), Error> {
         match token {
-            Token::XmlDecl { .. } => {},
+            Token::XmlDecl { .. } => {}
 
             Token::StartTag {
                 name,
@@ -145,11 +146,9 @@ impl TreeBuilder {
                 self.process_end_tag(name)?;
             }
 
-            Token::EndTag { name } =>
-                self.process_end_tag(name)?,
+            Token::EndTag { name } => self.process_end_tag(name)?,
 
-            Token::Text(text) =>
-                self.process_text(text),
+            Token::Text(text) => self.process_text(text),
         }
 
         Ok(())

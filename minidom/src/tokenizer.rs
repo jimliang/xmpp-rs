@@ -2,8 +2,8 @@
 
 //! Streaming tokenizer (SAX parser)
 
-use bytes::BytesMut;
 use super::{Error, Token};
+use bytes::BytesMut;
 
 /// `Result::Err` type returned from `Tokenizer`
 pub type TokenizerError = nom::error::Error<String>;
@@ -55,25 +55,22 @@ pub fn tokenize(buffer: &mut BytesMut) -> Result<Option<Token>, Error> {
         }
     }
 
-    let result: Option<(usize, Token)> = { match Token::parse(&buffer) {
-        Ok((s, token)) =>
-            Some((s.len(), token)),
-        Result::Err(nom::Err::Incomplete(_)) =>
-            None,
-        Result::Err(nom::Err::Error(e)) =>
-            return Err(with_input_to_owned(e).into()),
-        Result::Err(nom::Err::Failure(e)) =>
-            return Err(with_input_to_owned(e).into()),
-    } };
+    let result: Option<(usize, Token)> = {
+        match Token::parse(&buffer) {
+            Ok((s, token)) => Some((s.len(), token)),
+            Result::Err(nom::Err::Incomplete(_)) => None,
+            Result::Err(nom::Err::Error(e)) => return Err(with_input_to_owned(e).into()),
+            Result::Err(nom::Err::Failure(e)) => return Err(with_input_to_owned(e).into()),
+        }
+    };
     match result {
         Some((s_len, token)) => {
             let _ = buffer.split_to(buffer.len() - s_len);
             Ok(Some(token))
         }
-        None => Ok(None)
+        None => Ok(None),
     }
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -101,20 +98,21 @@ mod tests {
 
         let buf = b"<foo bar='baz'>quux</foo>";
         for chunk_size in 1..=buf.len() {
-            assert_eq!(vec![
-                Token::StartTag {
-                    name: "foo".into(),
-                    attrs: vec![Attribute {
-                        name: "bar".into(),
-                        value: "baz".to_owned(),
-                    }],
-                    self_closing: false,
-                },
-                Token::Text("quux".to_owned()),
-                Token::EndTag {
-                    name: "foo".into(),
-                },
-            ], run(chunk_size, buf));
+            assert_eq!(
+                vec![
+                    Token::StartTag {
+                        name: "foo".into(),
+                        attrs: vec![Attribute {
+                            name: "bar".into(),
+                            value: "baz".to_owned(),
+                        }],
+                        self_closing: false,
+                    },
+                    Token::Text("quux".to_owned()),
+                    Token::EndTag { name: "foo".into() },
+                ],
+                run(chunk_size, buf)
+            );
         }
     }
 }
