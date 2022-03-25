@@ -176,6 +176,7 @@ impl Token {
         let (s, _) = space0(s)?;
         let (s, delim) = one_of("'\"")(s)?;
         let (s, value) = Self::parse_text(delim, s)?;
+        let value = Self::normalize_attribute_value(value);
         let (s, _) = char(delim)(s)?;
         Ok((s, (name, value)))
     }
@@ -246,6 +247,16 @@ impl Token {
         }
         if s.find("\r").is_some() {
             s = Cow::from(s.replace("\r", "\n"));
+        }
+        s
+    }
+
+    /// https://www.w3.org/TR/2008/REC-xml-20081126/#AVNormalize
+    ///
+    /// assumes normalize_newlines() already done
+    fn normalize_attribute_value(mut s: Cow<str>) -> Cow<str> {
+        if s.find("\t").is_some() || s.find("\n").is_some() {
+            s = Cow::from(s.replace(|c| c == '\t' || c == '\n', " "));
         }
         s
     }
@@ -335,6 +346,22 @@ mod tests {
                 self_closing: false,
             })),
             Token::parse(b"<a a=\"2'3\" b = '4\"2' c = ''>")
+        );
+    }
+
+    #[test]
+    fn test_attrs_normalized() {
+        assert_eq!(
+            Ok((&b""[..], Token::StartTag {
+                name: "a".into(),
+                attrs: vec![
+                    attr("a", "x y"),
+                    attr("b", " "),
+                    attr("c", "a  b"),
+                ],
+                self_closing: false,
+            })),
+            Token::parse(b"<a a=\"x\ty\" b = '\r\n' c = 'a\r\rb'>")
         );
     }
 
