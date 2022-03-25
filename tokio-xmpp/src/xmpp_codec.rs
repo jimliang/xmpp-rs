@@ -9,7 +9,7 @@ use std::fmt::Write;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 use xmpp_parsers::Element;
-use minidom::{Tokenizer, tree_builder::TreeBuilder};
+use minidom::{tokenize, tree_builder::TreeBuilder};
 use crate::Error;
 
 /// Anything that can be sent or received on an XMPP/XML stream
@@ -30,18 +30,15 @@ pub struct XMPPCodec {
     /// Outgoing
     ns: Option<String>,
     /// Incoming
-    tokenizer: Tokenizer,
     stanza_builder: TreeBuilder,
 }
 
 impl XMPPCodec {
     /// Constructor
     pub fn new() -> Self {
-        let tokenizer = Tokenizer::new();
         let stanza_builder = TreeBuilder::new();
         XMPPCodec {
             ns: None,
-            tokenizer,
             stanza_builder,
         }
     }
@@ -58,10 +55,7 @@ impl Decoder for XMPPCodec {
     type Error = Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        self.tokenizer.push(buf);
-        buf.clear();
-
-        while let Some(token) = self.tokenizer.pull()? {
+        while let Some(token) = tokenize(buf)? {
             let had_stream_root = self.stanza_builder.depth() > 0;
             self.stanza_builder.process_token(token)?;
             let has_stream_root = self.stanza_builder.depth() > 0;
@@ -218,7 +212,6 @@ mod tests {
             Ok(Some(Packet::StreamStart(_))) => true,
             _ => false,
         });
-        b.clear();
         b.put_slice(b"</stream:stream>");
         let r = c.decode(&mut b);
         assert!(match r {
@@ -238,7 +231,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put_slice("<test>ß</test".as_bytes());
         let r = c.decode(&mut b);
         assert!(match r {
@@ -246,7 +238,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put_slice(b">");
         let r = c.decode(&mut b);
         assert!(match r {
@@ -266,7 +257,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put(&b"<test>\xc3"[..]);
         let r = c.decode(&mut b);
         assert!(match r {
@@ -274,7 +264,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put(&b"\x9f</test>"[..]);
         let r = c.decode(&mut b);
         assert!(match r {
@@ -295,7 +284,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put_slice(b"<status xml:lang='en'>Test status</status>");
         let r = c.decode(&mut b);
         assert!(match r {
@@ -345,7 +333,6 @@ mod tests {
             _ => false,
         });
 
-        b.clear();
         b.put_slice(b"<message ");
         b.put_slice(b"type='chat'><body>Foo</body></message>");
         let r = c.decode(&mut b);

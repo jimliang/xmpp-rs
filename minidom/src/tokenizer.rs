@@ -33,34 +33,44 @@ impl Tokenizer {
 
     /// Parse the next document fragment
     pub fn pull(&mut self) -> Result<Option<Token>, Error> {
-        /// cannot return an error with location info that points to
-        /// our buffer that we still want to mutate
-        fn with_input_to_owned(e: nom::error::Error<&[u8]>) -> TokenizerError {
-            nom::error::Error {
-                input: std::str::from_utf8(e.input)
-                    .unwrap_or("invalud UTF-8")
-                    .to_owned(),
-                code: e.code,
-            }
+        tokenize(&mut self.buffer)
+    }
+}
+
+/// Parse the next document fragment
+///
+/// By using this function directly instead of constructing a
+/// Tokenizer, you can work with a preexisting BytesMut instance that
+/// has been passed by tokio_util::codec::Decoder::decode() for
+/// example.
+pub fn tokenize(buffer: &mut BytesMut) -> Result<Option<Token>, Error> {
+    /// cannot return an error with location info that points to
+    /// our buffer that we still want to mutate
+    fn with_input_to_owned(e: nom::error::Error<&[u8]>) -> TokenizerError {
+        nom::error::Error {
+            input: std::str::from_utf8(e.input)
+                .unwrap_or("invalud UTF-8")
+                .to_owned(),
+            code: e.code,
         }
-        
-        let result: Option<(usize, Token)> = { match Token::parse(&self.buffer) {
-            Ok((s, token)) =>
-                Some((s.len(), token)),
-            Result::Err(nom::Err::Incomplete(_)) =>
-                None,
-            Result::Err(nom::Err::Error(e)) =>
-                return Err(with_input_to_owned(e).into()),
-            Result::Err(nom::Err::Failure(e)) =>
-                return Err(with_input_to_owned(e).into()),
-        } };
-        match result {
-           Some((s_len, token)) => {
-               let _ = self.buffer.split_to(self.buffer.len() - s_len);
-               Ok(Some(token))
-           }
-            None => Ok(None)
+    }
+
+    let result: Option<(usize, Token)> = { match Token::parse(&buffer) {
+        Ok((s, token)) =>
+            Some((s.len(), token)),
+        Result::Err(nom::Err::Incomplete(_)) =>
+            None,
+        Result::Err(nom::Err::Error(e)) =>
+            return Err(with_input_to_owned(e).into()),
+        Result::Err(nom::Err::Failure(e)) =>
+            return Err(with_input_to_owned(e).into()),
+    } };
+    match result {
+        Some((s_len, token)) => {
+            let _ = buffer.split_to(buffer.len() - s_len);
+            Ok(Some(token))
         }
+        None => Ok(None)
     }
 }
 
