@@ -218,7 +218,12 @@ impl Token {
                     Ok((s, Cow::from(format!("{}", c))))
                 }, |s| {
                     let (s, _) = not(peek(char(until)))(s)?;
-                    let (s, text) = take_while1(|b| b != until as u8 && b != b'&')(s)?;
+                    let (s, text) = take_while1(|b|
+                         b != until as u8 &&
+                         b != b'&' &&
+                         b != b'<' &&
+                         b != b'>'
+                    )(s)?;
                     let text = Self::str_from_utf8(text)?;
                     let text = Self::normalize_newlines(text);
                     Ok((s, text))
