@@ -2,13 +2,14 @@
 
 //! SAX events to DOM tree conversion
 
-use std::collections::{BTreeMap, HashMap};
-use rxml::{CData, Event, QName};
+use std::collections::BTreeMap;
+use rxml::RawEvent;
 use crate::{Element, Error};
-use crate::prefixes::Prefixes;
+use crate::prefixes::{Prefix, Prefixes};
 
 /// Tree-building parser state
 pub struct TreeBuilder {
+    next_tag: Option<(Prefix, String, Prefixes, BTreeMap<String, String>)>,
     /// Parsing stack
     stack: Vec<Element>,
     /// Namespace set stack by prefix
@@ -21,6 +22,7 @@ impl TreeBuilder {
     /// Create a new one
     pub fn new() -> Self {
         TreeBuilder {
+            next_tag: None,
             stack: vec![],
             prefixes_stack: vec![],
             root: None,
@@ -64,48 +66,6 @@ impl TreeBuilder {
         None
     }
 
-    fn process_start_tag(&mut self, (prefix, name): QName, attrs: HashMap<QName, CData>) -> Result<(), Error> {
-        dbg!(&attrs);
-        let mut prefixes = Prefixes::default();
-        let mut attributes = BTreeMap::new();
-        for ((prefix, name), value) in attrs.into_iter() {
-            match (prefix, name) {
-                (None, xmlns) if xmlns == "xmlns" => {
-                    prefixes.insert(None, value);
-                }
-                (Some(xmlns), prefix) if *xmlns == "xmlns" => {
-                    prefixes.insert(Some(prefix.as_string()), value);
-                }
-                (Some(prefix), name) => {
-                    attributes.insert(format!("{}:{}", prefix, name), value.as_string());
-                }
-                (None, name) => {
-                    attributes.insert(name.as_string(), value.as_string());
-                }
-            }
-        }
-        dbg!(&prefixes);
-        self.prefixes_stack.push(prefixes.clone());
-        dbg!(&attributes);
-
-        let namespace = self.lookup_prefix(
-            &prefix.clone().map(|prefix| prefix.as_str().to_owned())
-        )
-            .ok_or(Error::MissingNamespace)?
-            .to_owned();
-        let el = Element::new(
-            name.as_string(),
-            namespace,
-            Some(prefix.map(|prefix| prefix.as_str().to_owned())),
-            prefixes,
-            attributes,
-            vec![]
-        );
-        self.stack.push(el);
-
-        Ok(())
-    }
-
     fn process_end_tag(&mut self) -> Result<(), Error> {
         if let Some(el) = self.pop() {
             if self.depth() > 0 {
@@ -127,19 +87,64 @@ impl TreeBuilder {
     }
 
     /// Process a Event that you got out of a Eventizer
-    pub fn process_event(&mut self, event: Event) -> Result<(), Error> {
-        dbg!(&event);
+    pub fn process_event(&mut self, event: RawEvent) -> Result<(), Error> {
         match event {
-            Event::XMLDeclaration(_, _) => {},
+            RawEvent::XMLDeclaration(_, _) => {},
 
-            Event::StartElement(_, name, attrs) =>
-                self.process_start_tag(name, attrs)?,
+            RawEvent::ElementHeadOpen(_, (prefix, name)) =>
+                self.next_tag = Some((
+                    prefix.map(|prefix| prefix.as_str().to_owned()),
+                    name.as_str().to_owned(),
+                    Prefixes::default(),
+                    BTreeMap::new()
+                )),
 
-            Event::EndElement(_) =>
+            RawEvent::Attribute(_, (prefix, name), value) => {
+                self.next_tag.as_mut()
+                    .map(|(_, _, ref mut prefixes, ref mut attrs)| {
+                        match (prefix, name) {
+                            (None, xmlns) if xmlns == "xmlns" => {
+                                prefixes.insert(None, value);
+                            }
+                            (Some(xmlns), prefix) if xmlns.as_str() == "xmlns" => {
+                                prefixes.insert(Some(prefix.as_str().to_owned()), value);
+                            }
+                            (Some(prefix), name) => {
+                                attrs.insert(format!("{}:{}", prefix, name), value.as_str().to_owned());
+                            }
+                            (None, name) => {
+                                attrs.insert(name.as_str().to_owned(), value.as_str().to_owned());
+                            }
+                        }
+                    });
+            }
+
+            RawEvent::ElementHeadClose(_) => {
+                if let Some((prefix, name, prefixes, attrs)) = self.next_tag.take() {
+                    self.prefixes_stack.push(prefixes.clone());
+
+                    let namespace = self.lookup_prefix(
+                        &prefix.clone().map(|prefix| prefix.as_str().to_owned())
+                    )
+                        .ok_or(Error::MissingNamespace)?
+                        .to_owned();
+                    let el = Element::new(
+                        name.as_str().to_owned(),
+                        namespace,
+                        Some(prefix.map(|prefix| prefix.as_str().to_owned())),
+                        prefixes,
+                        attrs,
+                        vec![]
+                    );
+                    self.stack.push(el);
+                }
+            }
+
+            RawEvent::ElementFoot(_) =>
                 self.process_end_tag()?,
 
-            Event::Text(_, text) =>
-                self.process_text(text.as_string()),
+            RawEvent::Text(_, text) =>
+                self.process_text(text.as_str().to_owned()),
         }
 
         Ok(())

@@ -25,7 +25,7 @@ use std::io::{Cursor, BufRead, Write};
 use std::borrow::Cow;
 use std::str;
 
-use rxml::{EventRead, PullParser};
+use rxml::{EventRead, Lexer, PullDriver, RawParser};
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
 use quick_xml::Writer as EventWriter;
 
@@ -304,8 +304,8 @@ impl Element {
     /// Parse a document from a `Read`.
     pub fn from_reader<R: BufRead>(reader: R) -> Result<Element> {
         let mut tree_builder = TreeBuilder::new();
-        let mut parser = PullParser::new(reader);
-        while let Some(event) = parser.read()? {
+        let mut driver = PullDriver::wrap(reader, Lexer::new(), RawParser::new());
+        while let Some(event) = driver.read()? {
             tree_builder.process_event(event)?;
 
             if let Some(root) = tree_builder.root.take() {
@@ -954,8 +954,7 @@ mod tests {
     #[test]
     fn parses_spectest_xml() {
         // From: https://gitlab.com/lumi/minidom-rs/issues/8
-        let xml = r#"
-            <rng:grammar xmlns:rng="http://relaxng.org/ns/structure/1.0">
+        let xml = r#"<rng:grammar xmlns:rng="http://relaxng.org/ns/structure/1.0">
                 <rng:name xmlns:rng="http://relaxng.org/ns/structure/1.0"></rng:name>
             </rng:grammar>
         "#;

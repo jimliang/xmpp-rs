@@ -8,9 +8,9 @@
 //! Provides a `Parser` type, which takes bytes and returns Elements. It also keeps a hold of
 //! ascendant elements to be able to handle namespaces properly.
 
+use rxml::{PushDriver, RawParser};
 use crate::element::Element;
 use crate::error::{Error, ParserError, Result};
-use crate::tokenizer::Tokenizer;
 use crate::tree_builder::TreeBuilder;
 
 use std::str;
@@ -18,7 +18,7 @@ use std::str;
 /// Parser
 #[derive(Debug)]
 pub struct Parser {
-    tokenizer: Tokenizer,
+    driver: PushDriver<RawParser>,
     tree_builder: TreeBuilder,
     state: ParserState,
 }
@@ -90,7 +90,7 @@ impl Parser {
     /// Creates a new Parser
     pub fn new() -> Parser {
         Parser {
-            tokenizer: Tokenizer::new(),
+            driver: PushDriver::default(),
             tree_builder: TreeBuilder::new(),
             state: ParserState::Empty,
         }
@@ -98,7 +98,9 @@ impl Parser {
 
     /// Feed bytes to the parser.
     pub fn feed(&mut self, bytes: BytesMut) -> Result<()> {
-        self.buffer.borrow_mut().unsplit(bytes);
+        self.driver.feed(bytes);
+        bytes.clear();
+
         let state = match self.state {
             ParserState::Empty => {
                 // TODO: Try splitting xml prolog and stream header

@@ -432,12 +432,16 @@ fn fail_comments() {
 #[test]
 fn xml_error() {
     match "<a xmlns='ns1'></b>".parse::<Element>() {
-        Err(crate::error::Error::InvalidElementClosed) => (),
+        Err(crate::error::Error::ParserError(
+            rxml::Error::NotWellFormed(rxml::error::WFError::ElementMismatch)
+        )) => (),
         err => panic!("No or wrong error: {:?}", err),
     }
 
     match "<a xmlns='ns1'></".parse::<Element>() {
-        Err(crate::error::Error::EndOfDocument) => (),
+        Err(crate::error::Error::ParserError(
+            rxml::Error::NotWellFormed(rxml::error::WFError::InvalidEof(_))
+        )) => (),
         err => panic!("No or wrong error: {:?}", err),
     }
 }

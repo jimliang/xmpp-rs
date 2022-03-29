@@ -29,9 +29,6 @@ pub enum Error {
     /// An error which is returned when the end of the document was reached prematurely.
     EndOfDocument,
 
-    /// An error which is returned when an element is closed when it shouldn't be
-    InvalidElementClosed,
-
     /// An error which is returned when an element being serialized doesn't contain a prefix
     /// (be it None or Some(_)).
     InvalidPrefix,
@@ -50,7 +47,6 @@ impl StdError for Error {
             Error::ParserError(e) => Some(e),
             Error::IoError(e) => Some(e),
             Error::EndOfDocument => None,
-            Error::InvalidElementClosed => None,
             Error::InvalidPrefix => None,
             Error::MissingNamespace => None,
             Error::DuplicatePrefix => None,
@@ -66,9 +62,6 @@ impl std::fmt::Display for Error {
             Error::IoError(e) => write!(fmt, "IO error: {}", e),
             Error::EndOfDocument => {
                 write!(fmt, "the end of the document has been reached prematurely")
-            }
-            Error::InvalidElementClosed => {
-                write!(fmt, "the XML is invalid, an element was wrongly closed")
             }
             Error::InvalidPrefix => write!(fmt, "the prefix is invalid"),
             Error::MissingNamespace => write!(fmt, "the XML element is missing a namespace",),
