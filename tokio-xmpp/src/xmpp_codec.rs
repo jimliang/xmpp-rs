@@ -59,7 +59,14 @@ impl Decoder for XMPPCodec {
     type Error = Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        while let Some(token) = self.driver.parse(buf, false).map_err(|e| minidom::Error::from(e))? {
+        loop {
+            let token = match self.driver.parse(buf, false) {
+                Ok(Some(token)) => token,
+                Ok(None) => break,
+                Err(rxml::Error::IO(e)) if e.kind() == std::io::ErrorKind::WouldBlock => break,
+                Err(e) => return Err(minidom::Error::from(e).into()),
+            };
+
             let had_stream_root = self.stanza_builder.depth() > 0;
             self.stanza_builder.process_event(token)?;
             let has_stream_root = self.stanza_builder.depth() > 0;
