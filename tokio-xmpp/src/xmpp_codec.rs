@@ -9,7 +9,8 @@ use std::fmt::Write;
 use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 use xmpp_parsers::Element;
-use minidom::{tokenize, tree_builder::TreeBuilder};
+use minidom::tree_builder::TreeBuilder;
+use rxml::{EventRead, Lexer, PushDriver, RawParser};
 use crate::Error;
 
 /// Anything that can be sent or received on an XMPP/XML stream
@@ -30,6 +31,7 @@ pub struct XMPPCodec {
     /// Outgoing
     ns: Option<String>,
     /// Incoming
+    driver: PushDriver<'static, RawParser>,
     stanza_builder: TreeBuilder,
 }
 
@@ -37,8 +39,10 @@ impl XMPPCodec {
     /// Constructor
     pub fn new() -> Self {
         let stanza_builder = TreeBuilder::new();
+        let driver = PushDriver::wrap(Lexer::new(), RawParser::new());
         XMPPCodec {
             ns: None,
+            driver,
             stanza_builder,
         }
     }
@@ -55,9 +59,13 @@ impl Decoder for XMPPCodec {
     type Error = Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        while let Some(token) = tokenize(buf)? {
+        // TODO: avoid the .to_owned
+        self.driver.feed(std::borrow::Cow::from(buf.as_ref().to_owned()));
+        buf.clear();
+
+        while let Some(token) = self.driver.read().map_err(|e| minidom::Error::from(e))? {
             let had_stream_root = self.stanza_builder.depth() > 0;
-            self.stanza_builder.process_token(token)?;
+            self.stanza_builder.process_event(token)?;
             let has_stream_root = self.stanza_builder.depth() > 0;
 
             if ! had_stream_root && has_stream_root {
@@ -76,10 +84,14 @@ impl Decoder for XMPPCodec {
                     .collect();
                 return Ok(Some(Packet::StreamStart(attrs)));
             } else if self.stanza_builder.depth() == 1 {
+                self.driver.release_temporaries();
+
                 if let Some(stanza) = self.stanza_builder.unshift_child() {
                     return Ok(Some(Packet::Stanza(stanza)));
                 }
             } else if let Some(_) = self.stanza_builder.root.take() {
+                self.driver.release_temporaries();
+
                 return Ok(Some(Packet::StreamEnd));
             }
         }
@@ -317,7 +329,7 @@ mod tests {
         block_on(framed.send(Packet::Stanza(stanza))).expect("send");
         assert_eq!(
             framed.get_ref().get_ref(),
-            &("<message xmlns=\"jabber:client\"><body>".to_owned() + &text + "</body></message>")
+            &format!("<message xmlns=\"jabber:client\"><body>{}</body></message>", text)
                 .as_bytes()
         );
     }
