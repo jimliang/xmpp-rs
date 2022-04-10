@@ -10,7 +10,7 @@ use std::io;
 use tokio_util::codec::{Decoder, Encoder};
 use xmpp_parsers::Element;
 use minidom::tree_builder::TreeBuilder;
-use rxml::{EventRead, Lexer, PushDriver, RawParser};
+use rxml::{Lexer, PushDriver, RawParser};
 use crate::Error;
 
 /// Anything that can be sent or received on an XMPP/XML stream
@@ -31,7 +31,7 @@ pub struct XMPPCodec {
     /// Outgoing
     ns: Option<String>,
     /// Incoming
-    driver: PushDriver<'static, RawParser>,
+    driver: PushDriver<RawParser>,
     stanza_builder: TreeBuilder,
 }
 
@@ -59,11 +59,7 @@ impl Decoder for XMPPCodec {
     type Error = Error;
 
     fn decode(&mut self, buf: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
-        // TODO: avoid the .to_owned
-        self.driver.feed(std::borrow::Cow::from(buf.as_ref().to_owned()));
-        buf.clear();
-
-        while let Some(token) = self.driver.read().map_err(|e| minidom::Error::from(e))? {
+        while let Some(token) = self.driver.parse(buf, false).map_err(|e| minidom::Error::from(e))? {
             let had_stream_root = self.stanza_builder.depth() > 0;
             self.stanza_builder.process_event(token)?;
             let has_stream_root = self.stanza_builder.depth() > 0;

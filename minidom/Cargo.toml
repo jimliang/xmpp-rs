@@ -22,4 +22,4 @@ gitlab = { repository = "xmpp-rs/xmpp-rs" }
 
 [dependencies]
 quick-xml = "0.22.0"
-rxml = { git = "https://github.com/horazont/rxml.git" }
+rxml = { git = "https://github.com/horazont/rxml.git", branch = "feature/push-buf" }
