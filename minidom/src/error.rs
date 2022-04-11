@@ -17,8 +17,8 @@ use std::error::Error as StdError;
 /// Our main error type.
 #[derive(Debug)]
 pub enum Error {
-    /// An error from quick_xml.
-    XmlError(::quick_xml::Error),
+    /// An error from rxml.
+    EncodeError(::rxml::writer::EncodeError),
 
     /// Error from the Tokenizer
     ParserError(rxml::Error),
@@ -43,7 +43,7 @@ pub enum Error {
 impl StdError for Error {
     fn cause(&self) -> Option<&dyn StdError> {
         match self {
-            Error::XmlError(e) => Some(e),
+            Error::EncodeError(e) => Some(e),
             Error::ParserError(e) => Some(e),
             Error::IoError(e) => Some(e),
             Error::EndOfDocument => None,
@@ -57,7 +57,7 @@ impl StdError for Error {
 impl std::fmt::Display for Error {
     fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            Error::XmlError(e) => write!(fmt, "XML error: {}", e),
+            Error::EncodeError(e) => write!(fmt, "XML encode error: {}", e),
             Error::ParserError(e) => write!(fmt, "XML parser error: {}", e),
             Error::IoError(e) => write!(fmt, "IO error: {}", e),
             Error::EndOfDocument => {
@@ -70,9 +70,9 @@ impl std::fmt::Display for Error {
     }
 }
 
-impl From<::quick_xml::Error> for Error {
-    fn from(err: ::quick_xml::Error) -> Error {
-        Error::XmlError(err)
+impl From<::rxml::writer::EncodeError> for Error {
+    fn from(err: ::rxml::writer::EncodeError) -> Error {
+        Error::EncodeError(err)
     }
 }
 

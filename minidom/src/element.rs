@@ -20,14 +20,15 @@ use crate::prefixes::{Namespace, Prefix, Prefixes};
 use crate::tree_builder::TreeBuilder;
 
 use std::collections::{btree_map, BTreeMap};
+use std::convert::TryFrom;
 use std::io::{Cursor, BufRead, Write};
+use std::sync::Arc;
 
 use std::borrow::Cow;
 use std::str;
 
-use rxml::{EventRead, Lexer, PullDriver, RawParser};
-use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, Event};
-use quick_xml::Writer as EventWriter;
+use bytes::BufMut;
+use rxml::{CData, CDataStr, Encoder, Event, EventRead, Lexer, NCNameStr, PullDriver, RawParser, writer, writer::SimpleNamespaces};
 
 use std::str::FromStr;
 
@@ -315,121 +316,63 @@ impl Element {
         Err(Error::EndOfDocument)
     }
 
-    /// Output a document to a `Writer`.
-    pub fn write_to<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.to_writer(&mut EventWriter::new(writer))
+    /// Output a document
+    pub fn write_to<B: BufMut>(&self, buf: &mut B) -> Result<()> {
+        self.to_writer(&mut Encoder::new(), buf)
     }
 
-    /// Output a document to a `Writer`.
-    pub fn write_to_decl<W: Write>(&self, writer: &mut W) -> Result<()> {
-        self.to_writer_decl(&mut EventWriter::new(writer))
+    /// Output a document
+    pub fn write_to_decl<B: BufMut>(&self, buf: &mut B) -> Result<()> {
+        self.to_writer_decl(&mut Encoder::new(), buf)
     }
 
-    /// Output the document to quick-xml `Writer`
-    pub fn to_writer<W: Write>(&self, writer: &mut EventWriter<W>) -> Result<()> {
-        self.write_to_inner(writer, &mut BTreeMap::new())
+    /// Output the document
+    pub fn to_writer<B: BufMut>(&self, encoder: &mut Encoder<SimpleNamespaces>, buf: &mut B) -> Result<()> {
+        self.write_to_inner(encoder, buf)
     }
 
-    /// Output the document to quick-xml `Writer`
-    pub fn to_writer_decl<W: Write>(&self, writer: &mut EventWriter<W>) -> Result<()> {
-        writer.write_event(Event::Decl(BytesDecl::new(b"1.0", Some(b"utf-8"), None)))?;
-        self.write_to_inner(writer, &mut BTreeMap::new())
+    /// Output the document
+    pub fn to_writer_decl<B: BufMut>(&self, encoder: &mut Encoder<SimpleNamespaces>, buf: &mut B) -> Result<()> {
+        encoder.encode(writer::Item::XMLDeclaration(rxml::XMLVersion::V1_0), buf)?;
+        self.write_to_inner(encoder, buf)
     }
 
     /// Like `write_to()` but without the `<?xml?>` prelude
-    pub fn write_to_inner<W: Write>(
+    pub fn write_to_inner<B: BufMut>(
         &self,
-        writer: &mut EventWriter<W>,
-        all_prefixes: &mut BTreeMap<Prefix, Namespace>,
+        encoder: &mut Encoder<SimpleNamespaces>,
+        buf: &mut B,
     ) -> Result<()> {
-        let local_prefixes: &BTreeMap<Option<String>, String> = self.prefixes.declared_prefixes();
-
-        // Element namespace
-        // If the element prefix hasn't been set yet via a custom prefix, add it.
-        let mut existing_self_prefix: Option<Option<String>> = None;
-        for (prefix, ns) in local_prefixes.iter().chain(all_prefixes.iter()) {
-            if ns == &self.namespace {
-                existing_self_prefix = Some(prefix.clone());
-            }
-        }
-
-        let mut all_keys = all_prefixes.keys().cloned();
-        let mut local_keys = local_prefixes.keys().cloned();
-        let self_prefix: (Option<String>, bool) = match existing_self_prefix {
-            // No prefix exists already for our namespace
-            None => {
-                if !local_keys.any(|p| p.is_none()) {
-                    // Use the None prefix if available
-                    (None, true)
-                } else {
-                    // Otherwise generate one. Check if it isn't already used, if so increase the
-                    // number until we find a suitable one.
-                    let mut prefix_n = 0u8;
-                    while all_keys.any(|p| p == Some(format!("ns{}", prefix_n))) {
-                        prefix_n += 1;
-                    }
-                    (Some(format!("ns{}", prefix_n)), true)
-                }
-            }
-            // Some prefix has already been declared (or is going to be) for our namespace. We
-            // don't need to declare a new one. We do however need to remember which one to use in
-            // the tag name.
-            Some(prefix) => (prefix, false),
-        };
-
-        let name = match self_prefix {
-            (Some(ref prefix), _) => Cow::Owned(format!("{}:{}", prefix, self.name)),
-            _ => Cow::Borrowed(&self.name),
-        };
-        let mut start = BytesStart::borrowed(name.as_bytes(), name.len());
-
-        // Write self prefix if necessary
-        match self_prefix {
-            (Some(ref p), true) => {
-                let key = format!("xmlns:{}", p);
-                start.push_attribute((key.as_bytes(), self.namespace.as_bytes()));
-                all_prefixes.insert(self_prefix.0, self.namespace.clone());
-            }
-            (None, true) => {
-                let key = String::from("xmlns");
-                start.push_attribute((key.as_bytes(), self.namespace.as_bytes()));
-                all_prefixes.insert(self_prefix.0, self.namespace.clone());
-            }
-            _ => (),
-        };
-
-        // Custom prefixes/namespace sets
-        for (prefix, ns) in local_prefixes {
-            match all_prefixes.get(prefix) {
-                p @ Some(_) if p == prefix.as_ref() => (),
-                _ => {
-                    let key = match prefix {
-                        None => String::from("xmlns"),
-                        Some(p) => format!("xmlns:{}", p),
-                    };
-
-                    start.push_attribute((key.as_bytes(), ns.as_ref()));
-                    all_prefixes.insert(prefix.clone(), ns.clone());
-                }
-            }
-        }
+        let namespace = CData::try_from(&self.namespace[..]).ok()
+            .map(Arc::new);
+        let name = NCNameStr::from_str(&self.name)
+            .map_err(::rxml::error::Error::NotWellFormed)?;
+        encoder.encode(writer::Item::ElementHeadStart(namespace.clone(), &name), buf)?;
 
         for (key, value) in &self.attributes {
-            start.push_attribute((key.as_bytes(), escape(value.as_bytes()).as_ref()));
+            let name = NCNameStr::from_str(key)
+                .map_err(::rxml::error::Error::NotWellFormed)?;
+            let value = CDataStr::from_str(value)
+                .map_err(::rxml::error::Error::NotWellFormed)?;
+            encoder.encode(writer::Item::Attribute(None, name, value), buf)?;
         }
 
-        if self.children.is_empty() {
-            writer.write_event(Event::Empty(start))?;
-            return Ok(());
-        }
-
-        writer.write_event(Event::Start(start))?;
+        encoder.encode(writer::Item::ElementHeadEnd, buf)?;
 
         for child in &self.children {
-            child.write_to_inner(writer, &mut all_prefixes.clone())?;
+            match child {
+                Node::Text(s) => {
+                    let text = CDataStr::from_str(s)
+                        .map_err(::rxml::error::Error::NotWellFormed)?;
+                    encoder.encode(writer::Item::Text(text), buf)?;
+                }
+                Node::Element(el) =>
+                    el.write_to_inner(encoder, buf)?,
+            }
         }
 
-        writer.write_event(Event::End(BytesEnd::borrowed(name.as_bytes())))?;
+        encoder.encode(writer::Item::ElementFoot, buf)?;
+
         Ok(())
     }
 
