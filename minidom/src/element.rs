@@ -357,17 +357,19 @@ impl Element {
             encoder.encode(writer::Item::Attribute(None, name, value), buf)?;
         }
 
-        encoder.encode(writer::Item::ElementHeadEnd, buf)?;
+        if ! self.children.is_empty() {
+            encoder.encode(writer::Item::ElementHeadEnd, buf)?;
 
-        for child in &self.children {
-            match child {
-                Node::Text(s) => {
-                    let text = CDataStr::from_str(s)
-                        .map_err(::rxml::error::Error::NotWellFormed)?;
-                    encoder.encode(writer::Item::Text(text), buf)?;
+            for child in &self.children {
+                match child {
+                    Node::Text(s) => {
+                        let text = CDataStr::from_str(s)
+                            .map_err(::rxml::error::Error::NotWellFormed)?;
+                        encoder.encode(writer::Item::Text(text), buf)?;
+                    }
+                    Node::Element(el) =>
+                        el.write_to_inner(encoder, buf)?,
                 }
-                Node::Element(el) =>
-                    el.write_to_inner(encoder, buf)?,
             }
         }
 
