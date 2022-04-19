@@ -137,7 +137,7 @@ impl Encoder<Packet> for XMPPCodec {
                 write!(dst, "{}", buf).map_err(to_io_err)
             }
             Packet::Stanza(stanza) => stanza
-                .write_to(&mut WriteBytes::new(dst))
+                .write_to(dst)
                 .and_then(|_| {
                     debug!(">> {:?}", dst);
                     Ok(())
@@ -174,30 +174,6 @@ pub fn escape(input: &str) -> String {
         }
     }
     result
-}
-
-/// BytesMut impl only std::fmt::Write but not std::io::Write. The
-/// latter trait is required for minidom's
-/// `Element::write_to_inner()`.
-struct WriteBytes<'a> {
-    dst: &'a mut BytesMut,
-}
-
-impl<'a> WriteBytes<'a> {
-    fn new(dst: &'a mut BytesMut) -> Self {
-        WriteBytes { dst }
-    }
-}
-
-impl<'a> std::io::Write for WriteBytes<'a> {
-    fn write(&mut self, buf: &[u8]) -> std::result::Result<usize, std::io::Error> {
-        self.dst.put_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> std::result::Result<(), std::io::Error> {
-        Ok(())
-    }
 }
 
 #[cfg(test)]
