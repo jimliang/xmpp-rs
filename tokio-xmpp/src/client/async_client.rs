@@ -47,9 +47,9 @@ pub enum ServerConfig {
 
 /// XMMPP client configuration
 pub struct Config {
-    jid: Jid,
-    password: String,
-    server: ServerConfig,
+    pub jid: Jid,
+    pub password: String,
+    pub server: ServerConfig,
 }
 
 type XMPPStream = xmpp_stream::XMPPStream<TlsStream<TcpStream>>;
